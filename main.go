@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"log"
 	"net"
@@ -145,6 +146,39 @@ func getCreds(authService string) (string, string) {
 	return strings.TrimSpace(username), strings.TrimSpace(password)
 }
 
+func WriteListToFile(newList []string, toFile string, perms fs.FileMode) error {
+	listString := strings.Join(newList, "\n")
+	listBytes := []byte(listString)
+	err := ioutil.WriteFile(toFile, listBytes, perms)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func StringSliceContains(checkSlice []string, checkValue string) bool {
+	for _, v := range checkSlice {
+		if v == checkValue {
+			return true
+		}
+	}
+
+	return false
+}
+
+func uniqueSlice(strSlice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, entry := range strSlice {
+		if _, ok := keys[entry]; !ok {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
+}
+
 // ==================================================
 //
 // Main function start
@@ -156,6 +190,8 @@ func main() {
 	firewallList["Lab"] = "172.25.0.190"
 	firewallList["Metro"] = "172.25.0.1"
 	firewallList["Dallas"] = "172.27.0.1"
+
+	outputFileDir := "policySet"
 
 	keys := make([]string, 0, len(firewallList))
 	for k := range firewallList {
@@ -309,15 +345,18 @@ func main() {
 	sourcesList := make(map[string]string)
 	destinationsList := make(map[string]string)
 	var appList []string
+	var ruleSetList []string
 	color.Green("Source IP information for new policy\n")
 	for k, v := range sourceIPs {
 		for _, v2 := range v {
 			ipUnderscore := strings.Replace(strings.Replace(v2, ".", "_", -1), "/", "_", -1)
 			sourceIPAddrBook := fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
 			fmt.Printf("%s\n", sourceIPAddrBook)
+			ruleSetList = append(ruleSetList, sourceIPAddrBook)
 			sourceIPAddrSet := fmt.Sprintf("set groups automated security address-book global address-set %s address %s", fmt.Sprintf("%s-%s-SRC-Set", newRuleJSON.RefNumber, k), fmt.Sprintf("addr-%s-%s", k, ipUnderscore))
 			sourcesList[k] = fmt.Sprintf("%s-%s-SRC-Set", newRuleJSON.RefNumber, k)
 			fmt.Printf("%s\n", sourceIPAddrSet)
+			ruleSetList = append(ruleSetList, sourceIPAddrSet)
 		}
 	}
 	fmt.Println("=========================")
@@ -327,9 +366,11 @@ func main() {
 			ipUnderscore := strings.Replace(strings.Replace(v2, ".", "_", -1), "/", "_", -1)
 			destIPAddrBook := fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
 			fmt.Printf("%s\n", destIPAddrBook)
+			ruleSetList = append(ruleSetList, destIPAddrBook)
 			destIPAddrSet := fmt.Sprintf("set groups automated security address-book global address-set %s address %s", fmt.Sprintf("%s-%s-DST-Set", newRuleJSON.RefNumber, k), fmt.Sprintf("addr-%s-%s", k, ipUnderscore))
 			destinationsList[k] = fmt.Sprintf("%s-%s-DST-Set", newRuleJSON.RefNumber, k)
 			fmt.Printf("%s\n", destIPAddrSet)
+			ruleSetList = append(ruleSetList, destIPAddrSet)
 		}
 	}
 
@@ -339,8 +380,11 @@ func main() {
 		tcpAppProt := fmt.Sprintf("set groups automated applications application %s-%s protocol tcp", "TCP", v)
 		tcpAppPort := fmt.Sprintf("set groups automated applications application %s-%s destination-port %s", "TCP", v, v)
 		fmt.Printf("%s\n%s\n", tcpAppProt, tcpAppPort)
+		ruleSetList = append(ruleSetList, tcpAppProt)
+		ruleSetList = append(ruleSetList, tcpAppPort)
 		tcpAppSet := fmt.Sprintf("set groups automated applications application-set %s-tcp-app-set application %s-%s", newRuleJSON.RefNumber, "TCP", v)
 		fmt.Printf("%s\n", tcpAppSet)
+		ruleSetList = append(ruleSetList, tcpAppSet)
 		appList = append(appList, fmt.Sprintf("%s-tcp-app-set", newRuleJSON.RefNumber))
 	}
 	fmt.Println("=========================")
@@ -349,24 +393,41 @@ func main() {
 		udpAppProt := fmt.Sprintf("set groups automated applications application %s-%s protocol udp", "UDP", v)
 		udpAppPort := fmt.Sprintf("set groups automated applications application %s-%s destination-port %s", "UDP", v, v)
 		fmt.Printf("%s\n%s\n", udpAppProt, udpAppPort)
+		ruleSetList = append(ruleSetList, udpAppProt)
+		ruleSetList = append(ruleSetList, udpAppPort)
 		udpAppSet := fmt.Sprintf("set groups automated applications application-set %s-udp-app-set application %s-%s", newRuleJSON.RefNumber, "UDP", v)
 		fmt.Printf("%s\n", udpAppSet)
+		ruleSetList = append(ruleSetList, udpAppSet)
 		appList = append(appList, fmt.Sprintf("%s-udp-app-set", newRuleJSON.RefNumber))
 	}
+
+	uniqueAppList := uniqueSlice(appList)
+
 	fmt.Println("=========================")
 	color.Green("Policy Create")
 	for kS, vS := range sourcesList {
 		for kD, vD := range destinationsList {
 			fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s match source-address %s\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS)
+			ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s match source-address %s", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS))
 			fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s match destination-address %s\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vD)
-			for _, vA := range appList {
+			ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s match destination-address %s", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vD))
+			for _, vA := range uniqueAppList {
 				fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s match application %s\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vA)
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s match application %s", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vA))
 			}
 			fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s then permit\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
+			ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s then permit", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber)))
 			fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s then log session-init session-close\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
+			ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s then log session-init session-close", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber)))
 
 		}
 
+	}
+
+	setFilename := fmt.Sprintf("%s/%s.set", outputFileDir, newRuleJSON.RefNumber)
+	writeErr := WriteListToFile(ruleSetList, setFilename, 0666)
+	if writeErr != nil {
+		log.Fatal("Error writing set commands to file!")
 	}
 
 }
