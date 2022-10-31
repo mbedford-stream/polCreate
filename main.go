@@ -307,6 +307,9 @@ func main() {
 	}
 	// Check all TCP and UDP ports for valid int
 	for _, v := range newRuleJSON.TcpPorts {
+		if strings.ToLower(v) == "any" {
+			v = "0-65535"
+		}
 		if len(strings.Split(v, "-")) == 2 {
 			for _, i := range strings.Split(v, "-") {
 				_, err := strconv.Atoi(i)
@@ -325,6 +328,9 @@ func main() {
 	}
 
 	for _, v := range newRuleJSON.UdpPorts {
+		if strings.ToLower(v) == "any" {
+			v = "0-65535"
+		}
 		if len(strings.Split(v, "-")) == 2 {
 			for _, i := range strings.Split(v, "-") {
 				_, err := strconv.Atoi(i)
@@ -340,6 +346,23 @@ func main() {
 			}
 		}
 		udpPorts = append(udpPorts, v)
+	}
+
+	var useGlobal bool = false
+	if len(sourceIPs) > 3 || len(destinationIPs) > 3 {
+		fmt.Printf("It appears you have %d source zones and %d destination zones and it might make sense to create a global policy, would you like to do this?\n", len(sourceIPs), len(destinationIPs))
+		for {
+			reader = bufio.NewReader(os.Stdin)
+			fmt.Print("Create GLOBAL policy? (y/n):  ")
+			globalChoice, _ := reader.ReadString('\n')
+			globalChoice = strings.TrimRight(globalChoice, "\r\n")
+			if strings.ToLower(globalChoice) == "y" || strings.ToLower(globalChoice) == "n" {
+				if strings.ToLower(globalChoice) == "y" {
+					useGlobal = true
+				}
+				break
+			}
+		}
 	}
 
 	sourcesList := make(map[string]string)
@@ -405,23 +428,53 @@ func main() {
 
 	fmt.Println("=========================")
 	color.Green("Policy Create")
-	for kS, vS := range sourcesList {
-		for kD, vD := range destinationsList {
-			fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s match source-address %s\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS)
-			ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s match source-address %s", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS))
-			fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s match destination-address %s\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vD)
-			ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s match destination-address %s", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vD))
-			for _, vA := range uniqueAppList {
-				fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s match application %s\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vA)
-				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s match application %s", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vA))
+	descString := fmt.Sprintf("This is a %s", "description")
+	if !useGlobal {
+		for kS, vS := range sourcesList {
+			for kD, vD := range destinationsList {
+				fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s description \"%s\"\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), descString)
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s description \"%s\"", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), descString))
+				fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s match source-address %s\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS)
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s match source-address %s", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS))
+				fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s match destination-address %s\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vD)
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s match destination-address %s", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vD))
+				for _, vA := range uniqueAppList {
+					fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s match application %s\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vA)
+					ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s match application %s", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vA))
+				}
+				fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s then permit\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s then permit", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber)))
+				fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s then log session-init session-close\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s then log session-init session-close", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber)))
+
 			}
-			fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s then permit\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
-			ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s then permit", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber)))
-			fmt.Printf("set groups automated security policies from-zone %s to-zone %s policy %s then log session-init session-close\n", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
-			ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies from-zone %s to-zone %s policy %s then log session-init session-close", kS, kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber)))
 
 		}
+	} else {
+		for kS, vS := range sourcesList {
+			for kD, vD := range destinationsList {
+				fmt.Printf("set groups automated security policies global policy %s description \"%s\"\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), descString)
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s description \"%s\"", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), descString))
+				fmt.Printf("set groups automated security policies global policy %s match from-zone %s\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), kS)
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s match from-zone %s", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), kS))
+				fmt.Printf("set groups automated security policies global policy %s match to-zone %s\n", kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s match to-zone %s", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), kD))
+				fmt.Printf("set groups automated security policies global policy %s match source-address %s\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS)
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s match source-address %s", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS))
+				fmt.Printf("set groups automated security policies global policy %s match destination-address %s\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vD)
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s match destination-address %s", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vD))
+				for _, vA := range uniqueAppList {
+					fmt.Printf("set groups automated security policies global policy %s match application %s\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vA)
+					ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s match application %s", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vA))
+				}
+				fmt.Printf("set groups automated security policies global policy %s then permit\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s then permit", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber)))
+				fmt.Printf("set groups automated security policies global policy %s then then log session-init session-close\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
+				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s then log session-init session-close", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber)))
 
+			}
+
+		}
 	}
 
 	setFilename := fmt.Sprintf("%s/%s.set", outputFileDir, newRuleJSON.RefNumber)
