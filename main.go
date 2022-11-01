@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Juniper/go-netconf/netconf"
 	"github.com/fatih/color"
@@ -400,12 +401,17 @@ func main() {
 	fmt.Println("=========================")
 	color.Green("TCP Ports")
 	for _, v := range tcpPorts {
-		tcpAppProt := fmt.Sprintf("set groups automated applications application %s-%s protocol tcp", "TCP", v)
-		tcpAppPort := fmt.Sprintf("set groups automated applications application %s-%s destination-port %s", "TCP", v, v)
-		fmt.Printf("%s\n%s\n", tcpAppProt, tcpAppPort)
-		ruleSetList = append(ruleSetList, tcpAppProt)
-		ruleSetList = append(ruleSetList, tcpAppPort)
-		tcpAppSet := fmt.Sprintf("set groups automated applications application-set %s-tcp-app-set application %s-%s", newRuleJSON.RefNumber, "TCP", v)
+		var tcpAppSet string
+		if strings.ToLower(v) == "ping" {
+			tcpAppSet = fmt.Sprintf("set groups automated applications application-set %s-tcp-app-set application junos-icmp-all", newRuleJSON.RefNumber)
+		} else {
+			tcpAppProt := fmt.Sprintf("set groups automated applications application %s-%s protocol tcp", "TCP", v)
+			tcpAppPort := fmt.Sprintf("set groups automated applications application %s-%s destination-port %s", "TCP", v, v)
+			fmt.Printf("%s\n%s\n", tcpAppProt, tcpAppPort)
+			ruleSetList = append(ruleSetList, tcpAppProt)
+			ruleSetList = append(ruleSetList, tcpAppPort)
+			tcpAppSet = fmt.Sprintf("set groups automated applications application-set %s-tcp-app-set application %s-%s", newRuleJSON.RefNumber, "TCP", v)
+		}
 		fmt.Printf("%s\n", tcpAppSet)
 		ruleSetList = append(ruleSetList, tcpAppSet)
 		appList = append(appList, fmt.Sprintf("%s-tcp-app-set", newRuleJSON.RefNumber))
@@ -428,7 +434,7 @@ func main() {
 
 	fmt.Println("=========================")
 	color.Green("Policy Create")
-	descString := fmt.Sprintf("This is a %s", "description")
+	descString := fmt.Sprintf("Created: %s", time.Now().Format("2017-09-07"))
 	if !useGlobal {
 		for kS, vS := range sourcesList {
 			for kD, vD := range destinationsList {
@@ -457,7 +463,7 @@ func main() {
 				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s description \"%s\"", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), descString))
 				fmt.Printf("set groups automated security policies global policy %s match from-zone %s\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), kS)
 				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s match from-zone %s", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), kS))
-				fmt.Printf("set groups automated security policies global policy %s match to-zone %s\n", kD, fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber))
+				fmt.Printf("set groups automated security policies global policy %s match to-zone %s\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), kD)
 				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s match to-zone %s", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), kD))
 				fmt.Printf("set groups automated security policies global policy %s match source-address %s\n", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS)
 				ruleSetList = append(ruleSetList, fmt.Sprintf("set groups automated security policies global policy %s match source-address %s", fmt.Sprintf("%s-Policy", newRuleJSON.RefNumber), vS))
