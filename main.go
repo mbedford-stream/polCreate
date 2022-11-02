@@ -41,25 +41,6 @@ func readJSON(jsonFile string) (NewRuleData, error) {
 	return jsonPayload, nil
 }
 
-// FileExists tests to see if a file..... exists
-func FileExists(fileName string) bool {
-	if _, err := os.Stat(fileName); err != nil {
-		if os.IsNotExist(err) {
-			return false
-		}
-	}
-	return true
-}
-
-// FileIsADirectory - tests a file
-func FileIsADirectory(file string) bool {
-	if stat, err := os.Stat(file); err == nil && stat.IsDir() {
-		// path is a directory
-		return true
-	}
-	return false
-}
-
 func getZone(openSession *netconf.Session, lookupIP string) (string, error) {
 	lookupIP = strings.Split(lookupIP, "/")[0]
 	getRouteRPC := fmt.Sprintf("<get-route-information><destination>%s</destination><active-path/></get-route-information>", lookupIP)
@@ -240,6 +221,60 @@ func DNSResolver(resolveVal string) ([]string, error) {
 	return returnSlice, nil
 }
 
+func FileExists(fileName string) bool {
+	if _, err := os.Stat(fileName); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
+}
+
+// FileIsADirectory - tests a file
+func FileIsADirectory(file string) bool {
+	if stat, err := os.Stat(file); err == nil && stat.IsDir() {
+		// path is a directory
+		return true
+	}
+	return false
+}
+
+// FileReadReturnLines reads a file and returns the contents
+func FileReadReturnLines(fileName string) ([]string, error) {
+	var errSlice []string
+	if !FileExists(fileName) {
+		return errSlice, errors.New("file does not exist")
+	}
+
+	file, err := os.Open(fileName)
+	if err != nil {
+		return errSlice, errors.New("could not open file")
+	}
+
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	scanner.Split(bufio.ScanLines)
+
+	var lines []string
+
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	return lines, nil
+
+}
+
+// FileExistsAndIsADirectory - tests a file
+func FileExistsAndIsADirectory(file string) bool {
+	if FileExists(file) && FileIsADirectory(file) {
+		return true
+	}
+	return false
+}
+
 // ==================================================
 //
 // Main function start
@@ -253,6 +288,13 @@ func main() {
 	firewallList["Dallas"] = "172.27.0.1"
 
 	outputFileDir := "policySet"
+
+	if !FileExistsAndIsADirectory(outputFileDir) {
+		err := os.Mkdir(outputFileDir, 0755)
+		if err != nil {
+			log.Fatalf("Could not find or create directory for output: %s", outputFileDir)
+		}
+	}
 
 	keys := make([]string, 0, len(firewallList))
 	for k := range firewallList {
