@@ -1,0 +1,16 @@
+{
+    "refNumber": "DP20-1103",
+    "sources": [
+        "172.25.14.12",
+        "mtrqad-glsdb02.lnxsvr.aveanna.net",
+        "mtrprd-glsdb03.lnxsvr.aveanna.net",
+        "172.25.22.13"
+    ],
+    "destinations": [
+        "sftp.aveanna.com"
+    ],
+    "tcpPorts": [
+        "22"
+    ],
+    "udpPorts": []
+}

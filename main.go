@@ -180,6 +180,66 @@ func uniqueSlice(strSlice []string) []string {
 	return list
 }
 
+func Check1918(checkIP net.IP) bool {
+	localBlocks := []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16"}
+
+	for _, v := range localBlocks {
+		_, vCIDR, err := net.ParseCIDR(v)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if vCIDR.Contains(checkIP) {
+			// fmt.Println(v, checkIP)
+			return true
+		}
+	}
+
+	return false
+}
+
+func DNSResolver(resolveVal string) ([]string, error) {
+	var returnSlice []string
+	checkIP := net.ParseIP(resolveVal)
+	if checkIP.IsLoopback() {
+		return returnSlice, errors.New("IP is loopback")
+	}
+	if checkIP != nil {
+		if checkIP.IsGlobalUnicast() && !Check1918(checkIP) {
+			fmt.Printf("Resolving : %s\n", resolveVal)
+			returnHosts, err := net.LookupAddr(resolveVal)
+			if err != nil {
+				return returnSlice, err
+			}
+			for _, v := range returnHosts {
+				returnSlice = append(returnSlice, string(v))
+			}
+		} else {
+			if Check1918(checkIP) {
+				fmt.Printf("Resolving : %s\n\n", resolveVal)
+				returnHosts, err := net.LookupAddr(resolveVal)
+				if err != nil {
+					return returnSlice, err
+				}
+				for _, v := range returnHosts {
+					returnSlice = append(returnSlice, string(v))
+				}
+			}
+		}
+	} else {
+		fmt.Printf("Resolving : %s\n\n", resolveVal)
+		var err error
+		returnSlice, err = net.LookupHost(resolveVal)
+		if err != nil {
+			return returnSlice, err
+		}
+	}
+
+	return returnSlice, nil
+}
+
 // ==================================================
 //
 // Main function start
@@ -283,27 +343,47 @@ func main() {
 	defer devSession.Close()
 
 	for _, v := range newRuleJSON.Destinations {
+		var ipLookupStr, destName string
 		_, netAddr, err := getNetwork(v)
 		if err != nil {
-			log.Fatalf("%s", color.RedString("%s is not a valid IP in Destinations", v))
+			dnsResult, dnsErr := DNSResolver(v)
+			if dnsErr != nil {
+				log.Fatalf("%s", color.RedString("%s is not a valid destination address", v))
+			}
+			ipLookupStr = dnsResult[0]
+			destName = v
+		} else {
+			ipLookupStr = netAddr.String()
+			destName = ipLookupStr
 		}
-		toZone, err := getZone(devSession, netAddr.String())
+		// fmt.Println(ipLookupStr)
+		toZone, err := getZone(devSession, ipLookupStr)
 		if err != nil {
 			log.Fatalf("%s", color.RedString("%s %s", "Source", err))
 		}
-		destinationIPs[strings.Trim(toZone, "\n")] = append(destinationIPs[strings.Trim(toZone, "\n")], strings.Trim(netAddr.String(), "\r\n"))
+		// fmt.Println(toZone)
+		destinationIPs[strings.Trim(toZone, "\n")] = append(destinationIPs[strings.Trim(toZone, "\n")], strings.Trim(destName, "\r\n"))
 	}
 	// Check all provided Source IPs for valid IP
 	for _, v := range newRuleJSON.Sources {
+		var ipLookupStr, srcName string
 		_, netAddr, err := getNetwork(v)
 		if err != nil {
-			log.Fatalf("%s", color.RedString("%s is not a valid IP in Destinations", netAddr))
+			dnsResult, dnsErr := DNSResolver(v)
+			if dnsErr != nil {
+				log.Fatalf("%s", color.RedString("%s is not a valid source address", v))
+			}
+			ipLookupStr = dnsResult[0]
+			srcName = v
+		} else {
+			ipLookupStr = netAddr.String()
+			srcName = ipLookupStr
 		}
-		fromZone, err := getZone(devSession, netAddr.String())
+		fromZone, err := getZone(devSession, ipLookupStr)
 		if err != nil {
 			log.Fatalf("%s", color.RedString("%s %s", "Source", err))
 		}
-		sourceIPs[strings.Trim(fromZone, "\n")] = append(sourceIPs[strings.Trim(fromZone, "\n")], strings.Trim(netAddr.String(), "\r\n"))
+		sourceIPs[strings.Trim(fromZone, "\n")] = append(sourceIPs[strings.Trim(fromZone, "\n")], strings.Trim(srcName, "\r\n"))
 
 	}
 	// Check all TCP and UDP ports for valid int
@@ -374,8 +454,15 @@ func main() {
 	for k, v := range sourceIPs {
 		for _, v2 := range v {
 			ipUnderscore := strings.Replace(strings.Replace(v2, ".", "_", -1), "/", "_", -1)
-			sourceIPAddrBook := fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
-			fmt.Printf("%s\n", sourceIPAddrBook)
+			_, _, err := getNetwork(v2)
+			var sourceIPAddrBook string
+			if err != nil {
+				sourceIPAddrBook = fmt.Sprintf("set groups automated security address-book global address %s dns-name %s ipv4-only", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
+			} else {
+				sourceIPAddrBook = fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
+			}
+			// sourceIPAddrBook := fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
+			// fmt.Printf("%s\n", sourceIPAddrBook)
 			ruleSetList = append(ruleSetList, sourceIPAddrBook)
 			sourceIPAddrSet := fmt.Sprintf("set groups automated security address-book global address-set %s address %s", fmt.Sprintf("%s-%s-SRC-Set", newRuleJSON.RefNumber, k), fmt.Sprintf("addr-%s-%s", k, ipUnderscore))
 			sourcesList[k] = fmt.Sprintf("%s-%s-SRC-Set", newRuleJSON.RefNumber, k)
@@ -388,8 +475,15 @@ func main() {
 	for k, v := range destinationIPs {
 		for _, v2 := range v {
 			ipUnderscore := strings.Replace(strings.Replace(v2, ".", "_", -1), "/", "_", -1)
-			destIPAddrBook := fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
-			fmt.Printf("%s\n", destIPAddrBook)
+			_, _, err := getNetwork(v2)
+			var destIPAddrBook string
+			if err != nil {
+				destIPAddrBook = fmt.Sprintf("set groups automated security address-book global address %s dns-name %s ipv4-only", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
+			} else {
+				destIPAddrBook = fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
+			}
+			// destIPAddrBook := fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
+			// fmt.Printf("%s\n", destIPAddrBook)
 			ruleSetList = append(ruleSetList, destIPAddrBook)
 			destIPAddrSet := fmt.Sprintf("set groups automated security address-book global address-set %s address %s", fmt.Sprintf("%s-%s-DST-Set", newRuleJSON.RefNumber, k), fmt.Sprintf("addr-%s-%s", k, ipUnderscore))
 			destinationsList[k] = fmt.Sprintf("%s-%s-DST-Set", newRuleJSON.RefNumber, k)
@@ -434,7 +528,7 @@ func main() {
 
 	fmt.Println("=========================")
 	color.Green("Policy Create")
-	descString := fmt.Sprintf("Created: %s", time.Now().Format("2017-09-07"))
+	descString := fmt.Sprintf("Created: %s", time.Now().Format("2006-Jan-02"))
 	if !useGlobal {
 		for kS, vS := range sourcesList {
 			for kD, vD := range destinationsList {
@@ -483,7 +577,8 @@ func main() {
 		}
 	}
 
-	setFilename := fmt.Sprintf("%s/%s.set", outputFileDir, newRuleJSON.RefNumber)
+	timeStr := time.Now().Format("Jan-06-02-15-04-05")
+	setFilename := fmt.Sprintf("%s/%s-%s.set", outputFileDir, newRuleJSON.RefNumber, timeStr)
 	writeErr := WriteListToFile(ruleSetList, setFilename, 0666)
 	if writeErr != nil {
 		log.Fatal("Error writing set commands to file!")
