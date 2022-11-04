@@ -386,6 +386,7 @@ func main() {
 
 	for _, v := range newRuleJSON.Destinations {
 		var ipLookupStr, destName string
+		var validDNS bool = false
 		_, netAddr, err := getNetwork(v)
 		if err != nil {
 			dnsResult, dnsErr := DNSResolver(v)
@@ -393,22 +394,26 @@ func main() {
 				log.Fatalf("%s", color.RedString("%s is not a valid destination address", v))
 			}
 			ipLookupStr = dnsResult[0]
+			validDNS = true
 			destName = v
 		} else {
 			ipLookupStr = netAddr.String()
 			destName = ipLookupStr
 		}
-		// fmt.Println(ipLookupStr)
+		fmt.Println(ipLookupStr)
 		toZone, err := getZone(devSession, ipLookupStr)
 		if err != nil {
 			log.Fatalf("%s", color.RedString("%s %s", "Source", err))
 		}
-		// fmt.Println(toZone)
 		destinationIPs[strings.Trim(toZone, "\n")] = append(destinationIPs[strings.Trim(toZone, "\n")], strings.Trim(destName, "\r\n"))
+		if validDNS {
+			destinationIPs[strings.Trim(toZone, "\n")] = append(destinationIPs[strings.Trim(toZone, "\n")], strings.Trim(ipLookupStr, "\r\n"))
+		}
 	}
 	// Check all provided Source IPs for valid IP
 	for _, v := range newRuleJSON.Sources {
 		var ipLookupStr, srcName string
+		var validDNS bool = false
 		_, netAddr, err := getNetwork(v)
 		if err != nil {
 			dnsResult, dnsErr := DNSResolver(v)
@@ -416,6 +421,7 @@ func main() {
 				log.Fatalf("%s", color.RedString("%s is not a valid source address", v))
 			}
 			ipLookupStr = dnsResult[0]
+			validDNS = true
 			srcName = v
 		} else {
 			ipLookupStr = netAddr.String()
@@ -426,6 +432,9 @@ func main() {
 			log.Fatalf("%s", color.RedString("%s %s", "Source", err))
 		}
 		sourceIPs[strings.Trim(fromZone, "\n")] = append(sourceIPs[strings.Trim(fromZone, "\n")], strings.Trim(srcName, "\r\n"))
+		if validDNS {
+			sourceIPs[strings.Trim(fromZone, "\n")] = append(sourceIPs[strings.Trim(fromZone, "\n")], strings.Trim(ipLookupStr, "\r\n"))
+		}
 
 	}
 	// Check all TCP and UDP ports for valid int
@@ -504,7 +513,7 @@ func main() {
 				sourceIPAddrBook = fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
 			}
 			// sourceIPAddrBook := fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
-			// fmt.Printf("%s\n", sourceIPAddrBook)
+			fmt.Printf("%s\n", sourceIPAddrBook)
 			ruleSetList = append(ruleSetList, sourceIPAddrBook)
 			sourceIPAddrSet := fmt.Sprintf("set groups automated security address-book global address-set %s address %s", fmt.Sprintf("%s-%s-SRC-Set", newRuleJSON.RefNumber, k), fmt.Sprintf("addr-%s-%s", k, ipUnderscore))
 			sourcesList[k] = fmt.Sprintf("%s-%s-SRC-Set", newRuleJSON.RefNumber, k)
@@ -525,7 +534,7 @@ func main() {
 				destIPAddrBook = fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
 			}
 			// destIPAddrBook := fmt.Sprintf("set groups automated security address-book global address %s %s", fmt.Sprintf("addr-%s-%s", k, ipUnderscore), v2)
-			// fmt.Printf("%s\n", destIPAddrBook)
+			fmt.Printf("%s\n", destIPAddrBook)
 			ruleSetList = append(ruleSetList, destIPAddrBook)
 			destIPAddrSet := fmt.Sprintf("set groups automated security address-book global address-set %s address %s", fmt.Sprintf("%s-%s-DST-Set", newRuleJSON.RefNumber, k), fmt.Sprintf("addr-%s-%s", k, ipUnderscore))
 			destinationsList[k] = fmt.Sprintf("%s-%s-DST-Set", newRuleJSON.RefNumber, k)
